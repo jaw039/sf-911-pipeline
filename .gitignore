@@ -1,1 +1,8 @@
+venv/
 .env
+*.pyc
+__pycache__/
+data/
+*.duckdb
+.DS_Store
+mage_data/
