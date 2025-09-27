@@ -1,0 +1,8 @@
+{
+  "Rules": [{
+    "Expiration": {"Days": 30},
+    "Status": "Enabled",
+    "Filter": {"Prefix": "raw/"},
+    "ID": "DeleteOldRawData"
+  }]
+}
