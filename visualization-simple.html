@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SF 911 Call Volume Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 32px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        
+        #chart {
+            margin-top: 20px;
+        }
+        
+        .axis-label {
+            font-size: 14px;
+            fill: #666;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #667eea;
+            font-size: 18px;
+        }
+        
+        .error {
+            text-align: center;
+            padding: 40px;
+            color: #e74c3c;
+            font-size: 16px;
+        }
+
+        .line {
+            fill: none;
+            stroke-width: 3;
+        }
+
+        .axis path,
+        .axis line {
+            stroke: #ccc;
+        }
+
+        .axis text {
+            fill: #666;
+        }
+
+        .dot {
+            fill: #667eea;
+            stroke: #fff;
+            stroke-width: 2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SF 911 Call Volume Dashboard</h1>
+        <p class="subtitle">Real-time analysis of emergency call patterns</p>
+        
+        <div id="stats" class="stats"></div>
+        <div id="chart"></div>
+        <div id="loading" class="loading">Loading data...</div>
+    </div>
+
+    <script>
+        async function loadData() {
+            try {
+                const response = await fetch('data/web/hourly_calls.json');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const rawData = await response.json();
+                
+                // Convert string dates back to Date objects
+                const data = rawData.map(d => ({
+                    hour: new Date(d.hour),
+                    count: d.call_count
+                }));
+                
+                console.log(`Loaded ${data.length} records`);
+                return data;
+                
+            } catch (error) {
+                console.error('Error loading data:', error);
+                document.getElementById('loading').innerHTML = 
+                    `<div class="error">Error loading data: ${error.message}<br>Make sure the server is running and hourly_calls.json exists in data/web/</div>`;
+                return [];
+            }
+        }
+
+        function createStats(data) {
+            if (data.length === 0) return;
+            
+            const total = d3.sum(data, d => d.count);
+            const avg = d3.mean(data, d => d.count);
+            const max = d3.max(data, d => d.count);
+            
+            const statsHtml = `
+                <div class="stat-card">
+                    <div class="stat-value">${total.toLocaleString()}</div>
+                    <div class="stat-label">Total Calls</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${Math.round(avg)}</div>
+                    <div class="stat-label">Avg Calls/Hour</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${max}</div>
+                    <div class="stat-label">Peak Hour</div>
+                </div>
+            `;
+            
+            document.getElementById('stats').innerHTML = statsHtml;
+        }
+
+        function createChart(data) {
+            if (data.length === 0) return;
+            
+            document.getElementById('loading').style.display = 'none';
+            
+            const margin = {top: 20, right: 30, bottom: 70, left: 60};
+            const width = 1120 - margin.left - margin.right;
+            const height = 400 - margin.top - margin.bottom;
+            
+            const svg = d3.select('#chart')
+                .append('svg')
+                .attr('width', width + margin.left + margin.right)
+                .attr('height', height + margin.top + margin.bottom)
+                .append('g')
+                .attr('transform', `translate(${margin.left},${margin.top})`);
+            
+            const x = d3.scaleTime()
+                .domain(d3.extent(data, d => d.hour))
+                .range([0, width]);
+            
+            const y = d3.scaleLinear()
+                .domain([0, d3.max(data, d => d.count) * 1.1])
+                .range([height, 0]);
+            
+            const line = d3.line()
+                .x(d => x(d.hour))
+                .y(d => y(d.count))
+                .curve(d3.curveMonotoneX);
+            
+            // Create gradient
+            const gradient = svg.append('defs')
+                .append('linearGradient')
+                .attr('id', 'line-gradient')
+                .attr('gradientUnits', 'userSpaceOnUse')
+                .attr('x1', 0).attr('y1', y(0))
+                .attr('x2', 0).attr('y2', y(d3.max(data, d => d.count)));
+            
+            gradient.append('stop')
+                .attr('offset', '0%')
+                .attr('stop-color', '#667eea');
+            
+            gradient.append('stop')
+                .attr('offset', '100%')
+                .attr('stop-color', '#764ba2');
+            
+            // Add line
+            svg.append('path')
+                .datum(data)
+                .attr('class', 'line')
+                .attr('stroke', 'url(#line-gradient)')
+                .attr('d', line);
+            
+            // Add dots
+            svg.selectAll('.dot')
+                .data(data)
+                .enter().append('circle')
+                .attr('class', 'dot')
+                .attr('cx', d => x(d.hour))
+                .attr('cy', d => y(d.count))
+                .attr('r', 4);
+            
+            // Add axes
+            svg.append('g')
+                .attr('class', 'axis')
+                .attr('transform', `translate(0,${height})`)
+                .call(d3.axisBottom(x).ticks(10))
+                .selectAll('text')
+                .attr('transform', 'rotate(-45)')
+                .style('text-anchor', 'end');
+            
+            svg.append('g')
+                .attr('class', 'axis')
+                .call(d3.axisLeft(y));
+            
+            // Add axis labels
+            svg.append('text')
+                .attr('class', 'axis-label')
+                .attr('text-anchor', 'middle')
+                .attr('x', width / 2)
+                .attr('y', height + 60)
+                .text('Time');
+            
+            svg.append('text')
+                .attr('class', 'axis-label')
+                .attr('text-anchor', 'middle')
+                .attr('transform', 'rotate(-90)')
+                .attr('y', -45)
+                .attr('x', -height / 2)
+                .text('Number of Calls');
+        }
+
+        // Load and display data
+        loadData().then(data => {
+            createStats(data);
+            createChart(data);
+        });
+    </script>
+</body>
+</html>
